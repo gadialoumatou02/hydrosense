@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/irrigation_data.dart';
 import '../models/irrigation_history_item.dart';
-import '../service/websocket_service.dart';
+import '../service/api_service.dart';
 import '../widgets/info_card.dart';
 import '../widgets/status_card.dart';
 import 'history_page.dart';
@@ -18,37 +18,47 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int selectedIndex = 0;
 
-  late final WebSocketService _webSocketService;
-  StreamSubscription<IrrigationData>? _subscription;
-
   IrrigationData currentData = IrrigationData.empty();
   final List<IrrigationHistoryItem> history = [];
+
+  bool isLoading = true;
+  String? errorMessage;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
+    loadLatestData();
 
-    _webSocketService = WebSocketService(
-      // Remplace l’IP par l’IP de ton backend
-      url: 'ws://192.168.1.100:8000/ws',
-    );
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      loadLatestData();
+    });
+  }
 
-    _webSocketService.connect();
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
-    _subscription = _webSocketService.stream.listen((data) {
+  Future<void> loadLatestData() async {
+    try {
+      final data = await ApiService.fetchLatestData();
+
       setState(() {
         currentData = data;
+        errorMessage = null;
+        isLoading = false;
+
         history.insert(
           0,
-          IrrigationHistoryItem(
-            soilMoisture: data.soilMoisture,
-            temperature: data.temperature,
-            recommendedVolumeMl: data.recommendedVolumeMl,
-            wateredVolumeMl: data.wateredVolumeMl,
-            decision: data.decision,
-            valveState: data.valveState,
-            status: data.status,
+          IrrigationHistoryItem.fromData(
             timestamp: data.timestamp,
+            moisture: data.moisture,
+            flow: data.flow,
+            valveState: data.valveState,
+            aiDecision: data.aiDecision,
+            waterQuantity: data.waterQuantity,
           ),
         );
 
@@ -56,260 +66,248 @@ class _HomePageState extends State<HomePage> {
           history.removeLast();
         }
       });
-    });
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+        errorMessage = e.toString();
+      });
+    }
   }
 
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    _webSocketService.dispose();
-    super.dispose();
-  }
-
-  String formatTime(DateTime dateTime) {
+  String formatDateTime(DateTime dateTime) {
+    final day = dateTime.day.toString().padLeft(2, '0');
+    final month = dateTime.month.toString().padLeft(2, '0');
+    final year = dateTime.year.toString();
     final hour = dateTime.hour.toString().padLeft(2, '0');
     final minute = dateTime.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    return '$day/$month/$year à $hour:$minute';
   }
 
-  Color decisionColor(String decision) {
-    switch (decision) {
-      case 'ARROSER':
-        return Colors.green;
-      case 'ARROSAGE_BIENTOT':
-        return Colors.orange;
-      case 'NE_PAS_ARROSER':
-        return Colors.red;
-      default:
-        return Colors.blueGrey;
-    }
+  Color valveColor(int valveState) {
+    return valveState == 1 ? Colors.green : Colors.red;
   }
 
-  IconData decisionIcon(String decision) {
-    switch (decision) {
-      case 'ARROSER':
-        return Icons.check_circle;
-      case 'ARROSAGE_BIENTOT':
-        return Icons.schedule;
-      case 'NE_PAS_ARROSER':
-        return Icons.cancel;
-      default:
-        return Icons.help;
-    }
+  IconData valveIcon(int valveState) {
+    return valveState == 1 ? Icons.water : Icons.water_drop_outlined;
   }
 
-  Color valveColor(String valveState) {
-    switch (valveState) {
-      case 'OPEN':
-        return Colors.green;
-      case 'CLOSED':
-        return Colors.red;
-      case 'ERROR':
-        return Colors.orange;
-      default:
-        return Colors.blueGrey;
-    }
+  Color decisionColor(int aiDecision) {
+    return aiDecision == 1 ? Colors.green : Colors.orange;
   }
 
-  IconData valveIcon(String valveState) {
-    switch (valveState) {
-      case 'OPEN':
-        return Icons.water;
-      case 'CLOSED':
-        return Icons.water_drop_outlined;
-      case 'ERROR':
-        return Icons.warning_amber_rounded;
-      default:
-        return Icons.device_unknown;
-    }
+  IconData decisionIcon(int aiDecision) {
+    return aiDecision == 1 ? Icons.check_circle : Icons.pause_circle;
   }
 
   Widget buildDashboard() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [
-                Color(0xFF4FACFE),
-                Color(0xFF00C6FF),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(28),
-          ),
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Système d’arrosage intelligent',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                currentData.decision,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 30,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                currentData.message,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                ),
-              ),
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
               const SizedBox(height: 12),
               Text(
-                'Dernière mise à jour : ${formatTime(currentData.timestamp)}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                ),
+                'Impossible de charger les données.',
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                errorMessage!,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: loadLatestData,
+                child: const Text('Réessayer'),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 20),
+      );
+    }
 
-        StatusCard(
-          title: 'État de la vanne',
-          value: currentData.valveState,
-          color: valveColor(currentData.valveState),
-          icon: valveIcon(currentData.valveState),
-        ),
-        const SizedBox(height: 12),
-        StatusCard(
-          title: 'Décision du système',
-          value: currentData.decision,
-          color: decisionColor(currentData.decision),
-          icon: decisionIcon(currentData.decision),
-        ),
-        const SizedBox(height: 12),
-        StatusCard(
-          title: 'État global',
-          value: currentData.status,
-          color: Colors.blue,
-          icon: Icons.settings_remote,
-        ),
-        const SizedBox(height: 20),
-
-        Row(
-          children: [
-            Expanded(
-              child: InfoCard(
-                title: 'Humidité du sol',
-                value: '${currentData.soilMoisture.toStringAsFixed(1)} %',
-                icon: Icons.grass,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: InfoCard(
-                title: 'Température',
-                value: '${currentData.temperature.toStringAsFixed(1)} °C',
-                icon: Icons.thermostat,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: InfoCard(
-                title: 'Débit',
-                value: '${currentData.flowRateLMin.toStringAsFixed(2)} L/min',
-                icon: Icons.speed,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: InfoCard(
-                title: 'Volume conseillé',
-                value: '${currentData.recommendedVolumeMl.toStringAsFixed(0)} ml',
-                icon: Icons.water_drop,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        InfoCard(
-          title: 'Volume arrosé',
-          value: '${currentData.wateredVolumeMl.toStringAsFixed(0)} ml',
-          icon: Icons.opacity,
-        ),
-        const SizedBox(height: 24),
-
-        const Text(
-          'Derniers événements',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        if (history.isEmpty)
+    return RefreshIndicator(
+      onRefresh: loadLatestData,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+        children: [
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: const Text(
-              'Aucune donnée reçue pour le moment.',
-              textAlign: TextAlign.center,
-            ),
-          )
-        else
-          ...history.take(5).map(
-                (item) => Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.decision,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Humidité: ${item.soilMoisture.toStringAsFixed(1)}% | Temp: ${item.temperature.toStringAsFixed(1)}°C',
-                  ),
-                  Text(
-                    'Volume conseillé: ${item.recommendedVolumeMl.toStringAsFixed(0)} ml',
-                  ),
-                  Text(
-                    'Vanne: ${item.valveState} | Statut: ${item.status}',
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Reçu à ${formatTime(item.timestamp)}',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF4FACFE),
+                  Color(0xFF00C6FF),
                 ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Système d’arrosage intelligent',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  currentData.decisionLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  currentData.statusMessage,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Dernière mise à jour : ${formatDateTime(currentData.timestamp)}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
             ),
           ),
-      ],
+          const SizedBox(height: 20),
+
+          StatusCard(
+            title: 'État de la vanne',
+            value: currentData.valveLabel,
+            color: valveColor(currentData.valveState),
+            icon: valveIcon(currentData.valveState),
+          ),
+          const SizedBox(height: 12),
+
+          StatusCard(
+            title: 'Décision de l’IA',
+            value: currentData.decisionLabel,
+            color: decisionColor(currentData.aiDecision),
+            icon: decisionIcon(currentData.aiDecision),
+          ),
+          const SizedBox(height: 20),
+
+          Row(
+            children: [
+              Expanded(
+                child: InfoCard(
+                  title: 'Humidité',
+                  value: '${currentData.moisture.toStringAsFixed(1)} %',
+                  icon: Icons.grass,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InfoCard(
+                  title: 'Débit',
+                  value: '${currentData.flow.toStringAsFixed(2)} L/min',
+                  icon: Icons.speed,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              Expanded(
+                child: InfoCard(
+                  title: 'Quantité d’eau',
+                  value: '${currentData.waterQuantity.toStringAsFixed(2)} L',
+                  icon: Icons.water_drop,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InfoCard(
+                  title: 'Vanne',
+                  value: currentData.valveLabel,
+                  icon: Icons.settings_input_component,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          const Text(
+            'Dernières lectures',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          if (history.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Text(
+                'Aucune donnée reçue pour le moment.',
+                textAlign: TextAlign.center,
+              ),
+            )
+          else
+            ...history.take(5).map(
+                  (item) => Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.decisionLabel,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text('Humidité : ${item.moisture.toStringAsFixed(1)} %'),
+                    Text('Débit : ${item.flow.toStringAsFixed(2)} L/min'),
+                    Text('Vanne : ${item.valveLabel}'),
+                    Text(
+                      'Quantité d’eau : ${item.waterQuantity.toStringAsFixed(2)} L',
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      formatDateTime(item.timestamp),
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -327,10 +325,15 @@ class _HomePageState extends State<HomePage> {
           'HydroSense',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
+        actions: [
+          IconButton(
+            onPressed: loadLatestData,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Actualiser',
+          ),
+        ],
       ),
-      body: SafeArea(
-        child: pages[selectedIndex],
-      ),
+      body: SafeArea(child: pages[selectedIndex]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {

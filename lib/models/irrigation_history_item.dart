@@ -1,34 +1,39 @@
 class IrrigationHistoryItem {
-  final double soilMoisture;
-  final double temperature;
-  final double recommendedVolumeMl;
-  final double wateredVolumeMl;
-  final String decision;
-  final String valveState;
-  final String status;
   final DateTime timestamp;
+  final double moisture;
+  final double flow;
+  final int valveState;
+  final int aiDecision;
+  final double waterQuantity;
 
   const IrrigationHistoryItem({
-    required this.soilMoisture,
-    required this.temperature,
-    required this.recommendedVolumeMl,
-    required this.wateredVolumeMl,
-    required this.decision,
-    required this.valveState,
-    required this.status,
     required this.timestamp,
+    required this.moisture,
+    required this.flow,
+    required this.valveState,
+    required this.aiDecision,
+    required this.waterQuantity,
   });
 
-  factory IrrigationHistoryItem.fromJson(Map<String, dynamic> json) {
+  factory IrrigationHistoryItem.fromData({
+    required DateTime timestamp,
+    required double moisture,
+    required double flow,
+    required int valveState,
+    required int aiDecision,
+    required double waterQuantity,
+  }) {
     return IrrigationHistoryItem(
-      soilMoisture: (json['soil_moisture'] ?? 0).toDouble(),
-      temperature: (json['temperature'] ?? 0).toDouble(),
-      recommendedVolumeMl: (json['recommended_volume_ml'] ?? 0).toDouble(),
-      wateredVolumeMl: (json['watered_volume_ml'] ?? 0).toDouble(),
-      decision: json['decision'] ?? 'INCONNU',
-      valveState: json['valve_state'] ?? 'CLOSED',
-      status: json['status'] ?? 'IDLE',
-      timestamp: DateTime.tryParse(json['timestamp'] ?? '') ?? DateTime.now(),
+      timestamp: timestamp,
+      moisture: moisture,
+      flow: flow,
+      valveState: valveState,
+      aiDecision: aiDecision,
+      waterQuantity: waterQuantity,
     );
   }
+
+  String get valveLabel => valveState == 1 ? 'Ouverte' : 'Fermée';
+
+  String get decisionLabel => aiDecision == 1 ? 'Arroser' : 'Ne pas arroser';
 }

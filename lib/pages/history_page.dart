@@ -9,12 +9,13 @@ class HistoryPage extends StatelessWidget {
     required this.history,
   });
 
-  String formatTime(DateTime dateTime) {
-    final hour = dateTime.hour.toString().padLeft(2, '0');
-    final minute = dateTime.minute.toString().padLeft(2, '0');
+  String formatDateTime(DateTime dateTime) {
     final day = dateTime.day.toString().padLeft(2, '0');
     final month = dateTime.month.toString().padLeft(2, '0');
-    return '$day/$month ${hour}:$minute';
+    final year = dateTime.year.toString();
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year à $hour:$minute';
   }
 
   @override
@@ -66,26 +67,20 @@ class HistoryPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                item.decision,
+                item.decisionLabel,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 17,
                 ),
               ),
               const SizedBox(height: 8),
-              Text('Humidité du sol : ${item.soilMoisture.toStringAsFixed(1)} %'),
-              Text('Température : ${item.temperature.toStringAsFixed(1)} °C'),
-              Text(
-                'Volume conseillé : ${item.recommendedVolumeMl.toStringAsFixed(0)} ml',
-              ),
-              Text(
-                'Volume arrosé : ${item.wateredVolumeMl.toStringAsFixed(0)} ml',
-              ),
-              Text('État vanne : ${item.valveState}'),
-              Text('Statut : ${item.status}'),
+              Text('Humidité du sol : ${item.moisture.toStringAsFixed(1)} %'),
+              Text('Débit : ${item.flow.toStringAsFixed(2)} L/min'),
+              Text('État vanne : ${item.valveLabel}'),
+              Text('Quantité d’eau : ${item.waterQuantity.toStringAsFixed(2)} L'),
               const SizedBox(height: 6),
               Text(
-                formatTime(item.timestamp),
+                formatDateTime(item.timestamp),
                 style: TextStyle(
                   color: Colors.grey.shade600,
                 ),

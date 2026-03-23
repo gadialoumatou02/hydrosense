@@ -85,11 +85,12 @@ class _HomePageState extends State<HomePage> {
     final bool urgentMoisture =
         data.moisture < 30 && (prev == null || prev.moisture >= 30);
 
-    final bool systemFailure = data.aiDecision == 1 &&
-        (data.flow <= 0 || data.valveState == 0) &&
-        (prev == null ||
-            !(prev.aiDecision == 1 &&
-                (prev.flow <= 0 || prev.valveState == 0)));
+    final bool systemFailure =
+        data.aiDecision == 1 &&
+            (data.flow <= 0 || data.valveState == 0) &&
+            (prev == null ||
+                !(prev.aiDecision == 1 &&
+                    (prev.flow <= 0 || prev.valveState == 0)));
 
     if (urgentMoisture) {
       NotificationService.showNotification(
@@ -119,7 +120,88 @@ class _HomePageState extends State<HomePage> {
         'L’IA recommande ${data.waterQuantity.toStringAsFixed(2)} L d’eau.',
       );
       lastNotification = now;
+      return;
     }
+
+    if (prev == null && data.aiDecision == 1) {
+      NotificationService.showNotification(
+        id: 4,
+        title: '🌱 Arrosage recommandé',
+        body:
+        'Volume conseillé : ${data.waterQuantity.toStringAsFixed(2)} L',
+      );
+      lastNotification = now;
+    }
+  }
+
+  void triggerRecommendedNotification() {
+    final testData = IrrigationData(
+      timestamp: DateTime.now(),
+      moisture: 45.0,
+      flow: 1.1,
+      valveState: 1,
+      aiDecision: 1,
+      waterQuantity: 1.50,
+    );
+
+    previousData = IrrigationData.empty();
+    checkNotifications(testData);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Test notification arrosage envoyé')),
+    );
+  }
+
+  void triggerUrgentNotification() {
+    final testData = IrrigationData(
+      timestamp: DateTime.now(),
+      moisture: 22.0,
+      flow: 0.7,
+      valveState: 1,
+      aiDecision: 1,
+      waterQuantity: 2.30,
+    );
+
+    previousData = IrrigationData(
+      timestamp: DateTime.now(),
+      moisture: 40.0,
+      flow: 0.0,
+      valveState: 0,
+      aiDecision: 0,
+      waterQuantity: 0.0,
+    );
+
+    checkNotifications(testData);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Test notification urgente envoyé')),
+    );
+  }
+
+  void triggerFailureNotification() {
+    final testData = IrrigationData(
+      timestamp: DateTime.now(),
+      moisture: 28.0,
+      flow: 0.0,
+      valveState: 0,
+      aiDecision: 1,
+      waterQuantity: 1.80,
+    );
+
+    previousData = IrrigationData(
+      timestamp: DateTime.now(),
+      moisture: 35.0,
+      flow: 0.8,
+      valveState: 1,
+      aiDecision: 0,
+      waterQuantity: 0.5,
+    );
+
+    checkNotifications(testData);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Test notification défaillance envoyé')),
+    );
   }
 
   String formatDate(DateTime dateTime) {
@@ -136,40 +218,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget buildDashboard() {
-    if (isLoading) {
+    if (isLoading && errorMessage == null) {
       return const Center(child: CircularProgressIndicator());
-    }
-
-    if (errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 48),
-              const SizedBox(height: 12),
-              const Text(
-                'Impossible de charger les données.',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                errorMessage!,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: loadAllData,
-                child: const Text('Réessayer'),
-              ),
-            ],
-          ),
-        ),
-      );
     }
 
     return RefreshIndicator(
@@ -177,6 +227,36 @@ class _HomePageState extends State<HomePage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (errorMessage != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Serveur indisponible — mode test activé',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(errorMessage!),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Les notifications automatiques sont désactivées. '
+                        'Tu peux tester manuellement les alertes ci-dessous.',
+                  ),
+                ],
+              ),
+            ),
+
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -229,6 +309,39 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(height: 20),
+
+          if (errorMessage != null) ...[
+            const Text(
+              'Tests notifications',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                FilledButton.icon(
+                  onPressed: triggerRecommendedNotification,
+                  icon: const Icon(Icons.water_drop),
+                  label: const Text('Arrosage'),
+                ),
+                FilledButton.icon(
+                  onPressed: triggerUrgentNotification,
+                  icon: const Icon(Icons.warning_amber_rounded),
+                  label: const Text('Urgent'),
+                ),
+                FilledButton.icon(
+                  onPressed: triggerFailureNotification,
+                  icon: const Icon(Icons.error_outline),
+                  label: const Text('Défaillance'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
 
           StatusCard(
             title: 'État de la vanne',
@@ -393,7 +506,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: pages[selectedIndex],
+      body: SafeArea(child: pages[selectedIndex]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: (index) {

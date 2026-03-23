@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/irrigation_history_item.dart';
+import '../widgets/moisture_chart.dart';
+import '../widgets/flow_chart.dart';
 
 class HistoryPage extends StatelessWidget {
   final List<IrrigationHistoryItem> history;
@@ -9,13 +11,17 @@ class HistoryPage extends StatelessWidget {
     required this.history,
   });
 
-  String formatDateTime(DateTime dateTime) {
+  String formatDate(DateTime dateTime) {
     final day = dateTime.day.toString().padLeft(2, '0');
     final month = dateTime.month.toString().padLeft(2, '0');
     final year = dateTime.year.toString();
+    return '$day/$month/$year';
+  }
+
+  String formatTime(DateTime dateTime) {
     final hour = dateTime.hour.toString().padLeft(2, '0');
     final minute = dateTime.minute.toString().padLeft(2, '0');
-    return '$day/$month/$year à $hour:$minute';
+    return '$hour:$minute';
   }
 
   @override
@@ -32,11 +38,7 @@ class HistoryPage extends StatelessWidget {
             ),
             child: const Column(
               children: [
-                Icon(
-                  Icons.history,
-                  size: 46,
-                  color: Colors.blueGrey,
-                ),
+                Icon(Icons.history, size: 46, color: Colors.blueGrey),
                 SizedBox(height: 12),
                 Text(
                   'Aucun historique disponible.',
@@ -50,45 +52,76 @@ class HistoryPage extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      itemCount: history.length,
-      itemBuilder: (context, index) {
-        final item = history[index];
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Évolution de l’humidité',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(22),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item.decisionLabel,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 17,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text('Humidité du sol : ${item.moisture.toStringAsFixed(1)} %'),
-              Text('Débit : ${item.flow.toStringAsFixed(2)} L/min'),
-              Text('État vanne : ${item.valveLabel}'),
-              Text('Quantité d’eau : ${item.waterQuantity.toStringAsFixed(2)} L'),
-              const SizedBox(height: 6),
-              Text(
-                formatDateTime(item.timestamp),
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                ),
-              ),
-            ],
+          child: MoistureChart(data: history),
+        ),
+        const SizedBox(height: 24),
+        const Text(
+          'Évolution du débit',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
           ),
-        );
-      },
+          child: FlowChart(data: history),
+        ),
+        const SizedBox(height: 24),
+        const Text(
+          'Historique détaillé',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              columns: const [
+                DataColumn(label: Text('ID')),
+                DataColumn(label: Text('Humidité')),
+                DataColumn(label: Text('Débit')),
+                DataColumn(label: Text('Vanne')),
+                DataColumn(label: Text('Quantité')),
+                DataColumn(label: Text('Date')),
+                DataColumn(label: Text('Heure')),
+              ],
+              rows: history.map((item) {
+                return DataRow(
+                  cells: [
+                    DataCell(Text(item.id.toString())),
+                    DataCell(Text('${item.moisture.toStringAsFixed(1)} %')),
+                    DataCell(Text('${item.flow.toStringAsFixed(3)} L/min')),
+                    DataCell(Text(item.valveLabel)),
+                    DataCell(Text('${item.waterQuantity.toStringAsFixed(2)} L')),
+                    DataCell(Text(formatDate(item.timestamp))),
+                    DataCell(Text(formatTime(item.timestamp))),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

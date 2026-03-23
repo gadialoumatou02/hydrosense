@@ -1,4 +1,5 @@
 class IrrigationHistoryItem {
+  final int id;
   final DateTime timestamp;
   final double moisture;
   final double flow;
@@ -7,6 +8,7 @@ class IrrigationHistoryItem {
   final double waterQuantity;
 
   const IrrigationHistoryItem({
+    required this.id,
     required this.timestamp,
     required this.moisture,
     required this.flow,
@@ -15,7 +17,23 @@ class IrrigationHistoryItem {
     required this.waterQuantity,
   });
 
+  factory IrrigationHistoryItem.fromJson(Map<String, dynamic> json) {
+    return IrrigationHistoryItem(
+      id: json['id'] ?? 0,
+      timestamp: DateTime.tryParse(
+        (json['timestamp'] ?? '').toString().replaceFirst(' ', 'T'),
+      ) ??
+          DateTime.now(),
+      moisture: (json['moisture'] ?? 0).toDouble(),
+      flow: (json['flow'] ?? 0).toDouble(),
+      valveState: json['valve_state'] ?? 0,
+      aiDecision: json['ai_decision'] ?? 0,
+      waterQuantity: (json['water_quantity'] ?? 0).toDouble(),
+    );
+  }
+
   factory IrrigationHistoryItem.fromData({
+    required int id,
     required DateTime timestamp,
     required double moisture,
     required double flow,
@@ -24,6 +42,7 @@ class IrrigationHistoryItem {
     required double waterQuantity,
   }) {
     return IrrigationHistoryItem(
+      id: id,
       timestamp: timestamp,
       moisture: moisture,
       flow: flow,

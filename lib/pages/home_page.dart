@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/irrigation_data.dart';
 import '../models/irrigation_history_item.dart';
 import '../service/api_service.dart';
+import '../service/notification_service.dart';
 import '../widgets/info_card.dart';
 import '../widgets/status_card.dart';
 import 'history_page.dart';
@@ -19,19 +20,21 @@ class _HomePageState extends State<HomePage> {
   int selectedIndex = 0;
 
   IrrigationData currentData = IrrigationData.empty();
-  final List<IrrigationHistoryItem> history = [];
+  List<IrrigationHistoryItem> history = [];
 
   bool isLoading = true;
   String? errorMessage;
   Timer? _timer;
 
+  DateTime? lastNotification;
+
   @override
   void initState() {
     super.initState();
-    loadLatestData();
+    loadAllData();
 
     _timer = Timer.periodic(const Duration(seconds: 5), (_) {
-      loadLatestData();
+      loadAllData();
     });
   }
 
@@ -41,30 +44,18 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  Future<void> loadLatestData() async {
+  Future<void> loadAllData() async {
     try {
-      final data = await ApiService.fetchLatestData();
+      final latest = await ApiService.fetchLatestData();
+      final historyData = await ApiService.fetchHistory();
+
+      checkNotifications(latest);
 
       setState(() {
-        currentData = data;
+        currentData = latest;
+        history = historyData.reversed.toList();
         errorMessage = null;
         isLoading = false;
-
-        history.insert(
-          0,
-          IrrigationHistoryItem.fromData(
-            timestamp: data.timestamp,
-            moisture: data.moisture,
-            flow: data.flow,
-            valveState: data.valveState,
-            aiDecision: data.aiDecision,
-            waterQuantity: data.waterQuantity,
-          ),
-        );
-
-        if (history.length > 50) {
-          history.removeLast();
-        }
       });
     } catch (e) {
       setState(() {
@@ -74,29 +65,44 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  String formatDateTime(DateTime dateTime) {
-    final day = dateTime.day.toString().padLeft(2, '0');
-    final month = dateTime.month.toString().padLeft(2, '0');
-    final year = dateTime.year.toString();
-    final hour = dateTime.hour.toString().padLeft(2, '0');
-    final minute = dateTime.minute.toString().padLeft(2, '0');
-    return '$day/$month/$year à $hour:$minute';
+  // 🔔 LOGIQUE NOTIFICATIONS
+  void checkNotifications(IrrigationData data) {
+    final now = DateTime.now();
+
+    if (lastNotification != null &&
+        now.difference(lastNotification!).inSeconds < 30) {
+      return;
+    }
+
+    if (data.moisture < 30) {
+      NotificationService.showNotification(
+        title: "🚨 Arrosage urgent",
+        body: "Humidité critique (${data.moisture.toStringAsFixed(1)}%)",
+      );
+    } else if (data.aiDecision == 1) {
+      NotificationService.showNotification(
+        title: "🌱 Arrosage recommandé",
+        body:
+        "Volume conseillé : ${data.waterQuantity.toStringAsFixed(2)} L",
+      );
+    }
+
+    if (data.aiDecision == 1 && data.flow == 0) {
+      NotificationService.showNotification(
+        title: "⚠️ Défaillance système",
+        body: "Aucun débit détecté",
+      );
+    }
+
+    lastNotification = now;
   }
 
-  Color valveColor(int valveState) {
-    return valveState == 1 ? Colors.green : Colors.red;
+  String formatDate(DateTime dateTime) {
+    return "${dateTime.day}/${dateTime.month}/${dateTime.year}";
   }
 
-  IconData valveIcon(int valveState) {
-    return valveState == 1 ? Icons.water : Icons.water_drop_outlined;
-  }
-
-  Color decisionColor(int aiDecision) {
-    return aiDecision == 1 ? Colors.green : Colors.orange;
-  }
-
-  IconData decisionIcon(int aiDecision) {
-    return aiDecision == 1 ? Icons.check_circle : Icons.pause_circle;
+  String formatTime(DateTime dateTime) {
+    return "${dateTime.hour}:${dateTime.minute}";
   }
 
   Widget buildDashboard() {
@@ -106,208 +112,158 @@ class _HomePageState extends State<HomePage> {
 
     if (errorMessage != null) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 12),
-              Text(
-                'Impossible de charger les données.',
-                style: Theme.of(context).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                errorMessage!,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: loadLatestData,
-                child: const Text('Réessayer'),
-              ),
-            ],
-          ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error, color: Colors.red),
+            const SizedBox(height: 10),
+            Text(errorMessage!),
+            ElevatedButton(
+              onPressed: loadAllData,
+              child: const Text("Réessayer"),
+            ),
+          ],
         ),
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: loadLatestData,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [
-                  Color(0xFF4FACFE),
-                  Color(0xFF00C6FF),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(28),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Système d’arrosage intelligent',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  currentData.decisionLabel,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  currentData.statusMessage,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Dernière mise à jour : ${formatDateTime(currentData.timestamp)}',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 🔵 HEADER
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.blue,
+            borderRadius: BorderRadius.circular(20),
           ),
-          const SizedBox(height: 20),
-
-          StatusCard(
-            title: 'État de la vanne',
-            value: currentData.valveLabel,
-            color: valveColor(currentData.valveState),
-            icon: valveIcon(currentData.valveState),
-          ),
-          const SizedBox(height: 12),
-
-          StatusCard(
-            title: 'Décision de l’IA',
-            value: currentData.decisionLabel,
-            color: decisionColor(currentData.aiDecision),
-            icon: decisionIcon(currentData.aiDecision),
-          ),
-          const SizedBox(height: 20),
-
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: InfoCard(
-                  title: 'Humidité',
-                  value: '${currentData.moisture.toStringAsFixed(1)} %',
-                  icon: Icons.grass,
-                ),
+              const Text("HydroSense",
+                  style: TextStyle(color: Colors.white70)),
+              const SizedBox(height: 5),
+              Text(
+                currentData.decisionLabel,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: InfoCard(
-                  title: 'Débit',
-                  value: '${currentData.flow.toStringAsFixed(2)} L/min',
-                  icon: Icons.speed,
-                ),
+              const SizedBox(height: 5),
+              Text(
+                currentData.statusMessage,
+                style: const TextStyle(color: Colors.white),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+        ),
 
-          Row(
-            children: [
-              Expanded(
-                child: InfoCard(
-                  title: 'Quantité d’eau',
-                  value: '${currentData.waterQuantity.toStringAsFixed(2)} L',
-                  icon: Icons.water_drop,
-                ),
+        const SizedBox(height: 20),
+
+        // 📊 STATUS
+        StatusCard(
+          title: "État vanne",
+          value: currentData.valveLabel,
+          color: currentData.valveState == 1
+              ? Colors.green
+              : Colors.red,
+          icon: Icons.water,
+        ),
+
+        const SizedBox(height: 10),
+
+        StatusCard(
+          title: "Décision IA",
+          value: currentData.decisionLabel,
+          color: currentData.aiDecision == 1
+              ? Colors.green
+              : Colors.orange,
+          icon: Icons.psychology,
+        ),
+
+        const SizedBox(height: 20),
+
+        // 📊 INFOS
+        Row(
+          children: [
+            Expanded(
+              child: InfoCard(
+                title: "Humidité",
+                value:
+                "${currentData.moisture.toStringAsFixed(1)} %",
+                icon: Icons.grass,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: InfoCard(
-                  title: 'Vanne',
-                  value: currentData.valveLabel,
-                  icon: Icons.settings_input_component,
-                ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: InfoCard(
+                title: "Débit",
+                value:
+                "${currentData.flow.toStringAsFixed(2)} L/min",
+                icon: Icons.speed,
               ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 10),
+
+        Row(
+          children: [
+            Expanded(
+              child: InfoCard(
+                title: "Quantité",
+                value:
+                "${currentData.waterQuantity.toStringAsFixed(2)} L",
+                icon: Icons.water_drop,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: InfoCard(
+                title: "Heure",
+                value: formatTime(currentData.timestamp),
+                icon: Icons.access_time,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 20),
+
+        // 📋 TABLE HISTORIQUE
+        const Text(
+          "Historique récent",
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+
+        const SizedBox(height: 10),
+
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: const [
+              DataColumn(label: Text('ID')),
+              DataColumn(label: Text('Humidité')),
+              DataColumn(label: Text('Débit')),
+              DataColumn(label: Text('Vanne')),
+              DataColumn(label: Text('Quantité')),
+              DataColumn(label: Text('Heure')),
             ],
+            rows: history.take(10).map((item) {
+              return DataRow(cells: [
+                DataCell(Text(item.id.toString())),
+                DataCell(Text("${item.moisture.toStringAsFixed(1)}%")),
+                DataCell(Text("${item.flow.toStringAsFixed(2)}")),
+                DataCell(Text(item.valveLabel)),
+                DataCell(Text("${item.waterQuantity.toStringAsFixed(2)}")),
+                DataCell(Text(formatTime(item.timestamp))),
+              ]);
+            }).toList(),
           ),
-          const SizedBox(height: 24),
-
-          const Text(
-            'Dernières lectures',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          if (history.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: const Text(
-                'Aucune donnée reçue pour le moment.',
-                textAlign: TextAlign.center,
-              ),
-            )
-          else
-            ...history.take(5).map(
-                  (item) => Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.decisionLabel,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text('Humidité : ${item.moisture.toStringAsFixed(1)} %'),
-                    Text('Débit : ${item.flow.toStringAsFixed(2)} L/min'),
-                    Text('Vanne : ${item.valveLabel}'),
-                    Text(
-                      'Quantité d’eau : ${item.waterQuantity.toStringAsFixed(2)} L',
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      formatDateTime(item.timestamp),
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -321,42 +277,29 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'HydroSense',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text("HydroSense"),
         actions: [
           IconButton(
-            onPressed: loadLatestData,
+            onPressed: loadAllData,
             icon: const Icon(Icons.refresh),
-            tooltip: 'Actualiser',
-          ),
+          )
         ],
       ),
-      body: SafeArea(child: pages[selectedIndex]),
+      body: pages[selectedIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
-        onDestinationSelected: (index) {
+        onDestinationSelected: (i) {
           setState(() {
-            selectedIndex = index;
+            selectedIndex = i;
           });
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Accueil',
-          ),
+              icon: Icon(Icons.home), label: "Accueil"),
           NavigationDestination(
-            icon: Icon(Icons.history_outlined),
-            selectedIcon: Icon(Icons.history),
-            label: 'Historique',
-          ),
+              icon: Icon(Icons.history), label: "Historique"),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Paramètres',
-          ),
+              icon: Icon(Icons.settings), label: "Paramètres"),
         ],
       ),
     );

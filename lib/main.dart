@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:hydrosense/pages/home_page.dart';
+import 'pages/home_page.dart';
+import 'service/notification_service.dart';
 
-void main() {
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.init();
   runApp(const HydroSenseApp());
 }
 
@@ -16,7 +20,7 @@ class HydroSenseApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: Colors.blue,
-        scaffoldBackgroundColor: const Color(0xFFF4F8FC),
+        scaffoldBackgroundColor: const Color(0xFFF5F9FF),
       ),
       home: const HomePage(),
     );

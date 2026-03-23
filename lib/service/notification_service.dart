@@ -14,12 +14,14 @@ class NotificationService {
   }
 
   static Future<void> showNotification({
+    required int id,
     required String title,
     required String body,
   }) async {
     const androidDetails = AndroidNotificationDetails(
       'hydrosense_channel',
       'HydroSense Notifications',
+      channelDescription: 'Alertes intelligentes du système HydroSense',
       importance: Importance.max,
       priority: Priority.high,
     );
@@ -27,7 +29,7 @@ class NotificationService {
     const details = NotificationDetails(android: androidDetails);
 
     await _notifications.show(
-      0,
+      id,
       title,
       body,
       details,
